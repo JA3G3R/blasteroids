@@ -1,9 +1,11 @@
 ---DESCRIPTION---
 
-Just an ammateur implementation of the original arcade game blasteroids
+Just an ammateur implementation of the legendary arcade game blasteroids
 -----------------
 
------COMMANDS-----
+------------
+  COMMANDS
+------------
 
 commands for any unix based users(mac users as well), just copy paste all of them in the terminal separated by a ; or run each of them individually:
 
