@@ -20,4 +20,7 @@ BELOW IS THE MAIN COMPILATION COMMAND [which produces the actual blasteroids gam
 gcc -g blasteroids.c lib/prototype_funcs.c lib/collision_detection.c lib/sp_collision.c lib/menu_functions.c lib/translate_asteroid.c lib/translate_funcs.c -lallegro -lallegro_font -lallegro_primitives -o blasteroids
 
 -------------------
+<<<<<<< HEAD
 
+=======
+>>>>>>> 47d79889993b53e9f360bfc24dcdd951042a1f8c
