@@ -1,26 +1,61 @@
 #include "./include/includes_for_prototype2.h"
 #define NR_ASTEROIDS 8
-pthread_mutex_t blast_lock_handle_blast= PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t blast_lock_collider= PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t ast_lock=PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t blast_lock= PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t ast_lock_handle_blast=PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t ast_lock_collider=PTHREAD_MUTEX_INITIALIZER;
 float x,y,theta_in_radians,speed; 
 extern game_t* game;
 ALLEGRO_TRANSFORM* trans;
 ALLEGRO_FONT* font;
 extern ALLEGRO_FONT* local_font;
 extern ALLEGRO_TRANSFORM local_trans;
+extern ALLEGRO_TRANSFORM local_trans;
+ALLEGRO_TRANSFORM trans_lives[3];
 
-void initialize_variables(){  
+void draw_spaceship(float scale,ALLEGRO_COLOR acolor){
+	al_draw_line(scale*(0.5),scale*(0.28867),0,scale*(-0.577),acolor,3.0f);
+      	al_draw_line(scale*(-0.333),0,scale*(-0.1),0,acolor,3.0f);
+       	al_draw_line(scale*(0.333),0,scale*(0.1),0,acolor,3.0f);
+        al_draw_line(scale*(-0.5),scale*(0.28867),0,scale*(-0.577),acolor,3.0f);
+}
+
+void draw_lives(){
+	float x=20,y=50;
+	for(int i=0;i<game->lives_left;i++){
+		al_identity_transform(&trans_lives[i]);	
+		al_translate_transform(&trans_lives[i],x,y);
+		al_use_transform(&trans_lives[i]);
+		draw_spaceship(15,al_map_rgb(255,0,255));
+		x+=30;
+	}
+}	
+	
+void initialize_variables(){
 /* ....or effectively start fresh game */
 	x=(SC_WIDTH)/2;
 	y=(SC_HEIGHT)/2;
 	theta_in_radians=0;
 	speed=0; 
-	game->state=(GAME_PAUSED | PROT_SP);
+	game->state &=0;
+	game->state=(GAME_PAUSED | PROT_SP | NEW_GAME_STARTED);
 	game->score=0;
-	game->blasts_on_screen=0;
+	game->lives_left=3;
+	if(game->bl_null) {
+		while(game->bl_null->next!=NULL){
+			clean_blasts(true);
+			game->blasts_on_screen++;
+		}
+		free(game->bl_null);
+	}
+	if(game->as_null) {
+		while(game->as_null->next!=NULL){
+			clean_asteroids(true);
+			game->asteroids_on_screen++;
+		}
+		free(game->as_null);
+	}
 	game->asteroids_on_screen=NR_ASTEROIDS;
-	if(game->bl_null) free(game->bl_null);
+	game->blasts_on_screen=0;
 	game->bl_null = (blast*)(malloc(sizeof(blast)));
 	game->bl_null->alive=true;
 	game->as_null=generate_asteroids();
@@ -32,13 +67,13 @@ void* handle_blast(void* null){
 /*it's one of the two thread functions used by the game */
 	while(1){
 	if(!(game->state & RESPAWNING)){
-		pthread_mutex_lock(&blast_lock_handle_blast);
+		pthread_mutex_lock(&blast_lock);
 		blast* bl_ptr=game->bl_null;
 		for(int i=0;i<game->blasts_on_screen;i++){
 			asteroid* as_ptr=game->as_null;
 			if(bl_ptr->next && bl_ptr->next->alive){
 				bl_ptr=bl_ptr->next;	
-				pthread_mutex_lock(&ast_lock);
+				pthread_mutex_lock(&ast_lock_handle_blast);
 				int itr=game->asteroids_on_screen;
 				for(int y=0;(y<itr);y++){
 					as_ptr=as_ptr->next;
@@ -50,10 +85,10 @@ void* handle_blast(void* null){
 							break;
 					}
 				}
-				pthread_mutex_unlock(&ast_lock);
+				pthread_mutex_unlock(&ast_lock_handle_blast);
 			}
-	}	
-	pthread_mutex_unlock(&blast_lock_handle_blast);
+		}	
+		pthread_mutex_unlock(&blast_lock);
 	} 
 }
 
@@ -88,9 +123,9 @@ void *collider(void *null){
 				}
 
 				if(game->event.type==ALLEGRO_EVENT_TIMER){
-					pthread_mutex_lock(&ast_lock);
+					pthread_mutex_lock(&ast_lock_collider);
 					handle_sp_collision(&x,&y,&theta_in_radians);
-					pthread_mutex_unlock(&ast_lock);
+					pthread_mutex_unlock(&ast_lock_collider);
 				}	
 			}
 			
@@ -117,33 +152,40 @@ void play_game(){
 		exit(1);
 }
 		
-	ALLEGRO_COLOR acolor=al_map_rgb(0,255,0);
+	ALLEGRO_COLOR acolor=al_map_rgb(255,0,0);
 	bool left=false,right=false,up=false,down=false,space=false,shift=false,redraw=false,escape=false;
 	while(1){
-		if(!(game->state & RESPAWNING))
 			al_wait_for_event(game->queue,&game->event);
 		if(game->event.type==ALLEGRO_EVENT_TIMER){
 
 			redraw=true; // makes sure that only the timer event triggers the display to advance
 			
-			pthread_mutex_lock(&blast_lock_handle_blast); // prevents stepping on the toe of handle blast thread
+			pthread_mutex_lock(&blast_lock); // prevents stepping on the toe of handle blast thread
 
 			if(game->blasts_on_screen)
-			clean_blasts(); //cleans dead blasts if any
+			clean_blasts(false); //cleans dead blasts if any
 
-			pthread_mutex_unlock(&blast_lock_handle_blast);
+			pthread_mutex_unlock(&blast_lock);
 			
 			handle_collision(); // handles collision b/w asteroids
 
-			pthread_mutex_lock(&ast_lock); 
+			pthread_mutex_lock(&ast_lock_handle_blast); 
+			pthread_mutex_lock(&ast_lock_collider); 
 			
-			clean_asteroids(); //cleans dead asteroids
+			clean_asteroids(false); //cleans dead asteroids
 
-			pthread_mutex_unlock(&ast_lock);
+			pthread_mutex_unlock(&ast_lock_handle_blast);
+			pthread_mutex_unlock(&ast_lock_collider);
 
 			blink_timer++;
+			if(game->lives_left==0) {
+				game->state &=0;
+				game->state |= SP_DEAD;
+				game->state |= GAME_PAUSED;
+				//you_died();
+				break;
+			}
 			
-			//generate_new_asteroids();
 		}
 		
 		if(game->event.type==ALLEGRO_EVENT_KEY_DOWN){
@@ -213,7 +255,7 @@ void play_game(){
 			if((theta_in_radians -= OMEGA)<0)
 				theta_in_radians = 6.2832+theta_in_radians;
 
-			rotate_object(trans,x,y,-OMEGA);
+			rotate_object(trans,x,y,-OMEGA); // gracefully rotates the spaceship
 		}
 		if(right)
 		{
@@ -223,56 +265,56 @@ void play_game(){
 		}
 		if(space)
 		{
-			pthread_mutex_lock(&blast_lock_handle_blast);
-			generate_blast(x,y,theta_in_radians);
-			pthread_mutex_unlock(&blast_lock_handle_blast);
+			pthread_mutex_lock(&blast_lock);
+			generate_blast(x,y,theta_in_radians); // fire that blast!!!
+			pthread_mutex_unlock(&blast_lock);
 			game->blasts_on_screen++;
 			space=false;
 		}
 		if(escape){
-			game->state |= GAME_STARTED;
+		       	//change the state of the gamej
+
+			game->state |= GAME_STARTED;			
 			game->state |= GAME_PAUSED;
 			break;
 		}
 		
 		if(game->event.type==ALLEGRO_EVENT_DISPLAY_CLOSE)
 			exit(1);
+			// save_and_exit(); not yet implemented !
 
 		if(redraw && al_is_event_queue_empty(game->queue)) {
 
-				al_clear_to_color(al_map_rgb(0,0,0));
-				draw_each_asteroid();
-				
-				if(!(game->state & RESPAWNING)) // we do not want the spaceship to be still visible on the screen after as-sp collision
+			
+			al_clear_to_color(al_map_rgb(0,0,0));
+			draw_each_asteroid(); // advance the asteroids one frame and draw each of them
+			draw_lives();
+			
+			if(!(game->state & RESPAWNING)) // we do not want the spaceship to be still visible on the screen after as-sp collision
+			{
+				if(speed){
+					x= translate_spaceship_x(trans,speed,SC_WIDTH,theta_in_radians,x); // if(speed), move the speed in the x co-ordinate
+	                       		y=translate_spaceship_y(trans,speed,SC_HEIGHT,theta_in_radians,y);// if(speed), move the speed in the y co-ordinate
+				}	
+				al_use_transform(trans);
 
-			       	{
-					if(speed){
-						x= translate_spaceship_x(trans,speed,SC_WIDTH,theta_in_radians,x);
-	                        		y=translate_spaceship_y(trans,speed,SC_HEIGHT,theta_in_radians,y);
-					}	
-					al_use_transform(trans);
-
-					if((game->state & PROT_SP) && (blink_timer==5)) {
-				       		al_draw_circle(0,0,20,al_map_rgb(255,255,255),3.0f);
-						blink_timer=0;
-					}
-					else if(blink_timer > 5)
-						blink_timer%=5;
-
-					al_draw_line(SCALE*(0.5),SCALE*(0.28867),0,SCALE*(-0.577),acolor,3.0f);
-       		                	al_draw_line(SCALE*(-0.333),0,SCALE*(-0.1),0,acolor,3.0f);
-
-                	        	al_draw_line(SCALE*(0.333),0,SCALE*(0.1),0,acolor,3.0f);
-                        		al_draw_line(SCALE*(-0.5),SCALE*(0.28867),0,SCALE*(-0.577),acolor,3.0f);
-				
+				if((game->state & PROT_SP) && (blink_timer==5)) {
+				       	al_draw_circle(0,0,20,al_map_rgb(255,255,255),3.0f);
+					blink_timer=0; // causes the respawn shield/circle, which indicates that the spaceship can't be harmed, to blink...
+				}
+				else if(blink_timer > 5) blink_timer%=5;
+					
+				draw_spaceship(SCALE,al_map_rgb(0,255,0));					
 
 				if(game->blasts_on_screen)
 					draw_each_blast();
-				}
-				else{
-				       	respawn_wait();
+			}
+			else{
+				if(game->lives_left){
+	                		respawn_wait();
 					left=false,right=false,up=false,down=false,space=false,shift=false,escape=false;
 				}
+			}
 
 				al_flip_display();
 				redraw=false;
@@ -323,9 +365,18 @@ void menu(){
 		
 		if(game->event.type==ALLEGRO_EVENT_MOUSE_BUTTON_DOWN){
 			if(is_play_selected){
-				game->state |= GAME_STARTED;
-				game->state &= ~GAME_PAUSED;
-				break;
+				if(game->state & SP_DEAD){
+					initialize_variables();
+					game->state |= GAME_STARTED;
+					game->state &= ~GAME_PAUSED;
+					game->state |= NEW_GAME_STARTED;
+					game->state |= PROT_SP;
+					break;
+				} else {
+					game->state |= GAME_STARTED;
+					game->state &= ~GAME_PAUSED;
+					break;
+				}
 			}
 
 			if(is_exit_selected)
