@@ -40,20 +40,20 @@ void initialize_variables(){
 	game->state=(GAME_PAUSED | PROT_SP | NEW_GAME_STARTED);
 	game->score=0;
 	game->lives_left=3;
+	pthread_mutex_lock(&blast_lock);
 	if(game->bl_null) {
-		while(game->bl_null->next!=NULL){
-			clean_blasts(true);
-			game->blasts_on_screen++;
-		}
+		clean_blasts(true);
 		free(game->bl_null);
 	}
+	pthread_mutex_unlock(&blast_lock);
+	pthread_mutex_lock(&ast_lock_handle_blast);
+	pthread_mutex_lock(&ast_lock_collider);
 	if(game->as_null) {
-		while(game->as_null->next!=NULL){
-			clean_asteroids(true);
-			game->asteroids_on_screen++;
-		}
+		clean_asteroids(true);
 		free(game->as_null);
 	}
+	pthread_mutex_unlock(&ast_lock_handle_blast);
+	pthread_mutex_unlock(&ast_lock_collider);
 	game->asteroids_on_screen=NR_ASTEROIDS;
 	game->blasts_on_screen=0;
 	game->bl_null = (blast*)(malloc(sizeof(blast)));
@@ -65,6 +65,7 @@ void initialize_variables(){
 
 void* handle_blast(void* null){
 /*it's one of the two thread functions used by the game */
+	void *retval;
 	while(1){
 	if(!(game->state & RESPAWNING)){
 		pthread_mutex_lock(&blast_lock);
@@ -89,6 +90,7 @@ void* handle_blast(void* null){
 			}
 		}	
 		pthread_mutex_unlock(&blast_lock);
+		if(game->state & GAME_PAUSED) pthread_exit(retval);
 	} 
 }
 
@@ -96,10 +98,12 @@ void* handle_blast(void* null){
 
 void *collider(void *null){
 /* one of the two thread functions used by game */
+	void *retval;
 	static int sleep_count=0;
 	static int i=0;
 		while(1){ 
 			if(!((game->state & RESPAWNING))){	
+				if(game->state & GAME_PAUSED) pthread_exit(retval);
 				if((game->state & PROT_SP) || (game->state & NEW_GAME_STARTED) || (game->state & SP_RESPAWN)){
 					if(game->state & NEW_GAME_STARTED){
 						game->state &= ~(NEW_GAME_STARTED);
@@ -123,6 +127,7 @@ void *collider(void *null){
 				}
 
 				if(game->event.type==ALLEGRO_EVENT_TIMER){
+					if(game->state & GAME_PAUSED) pthread_exit(retval);
 					pthread_mutex_lock(&ast_lock_collider);
 					handle_sp_collision(&x,&y,&theta_in_radians);
 					pthread_mutex_unlock(&ast_lock_collider);
@@ -137,25 +142,27 @@ void play_game(){
 	pthread_t collider_thread;
 	pthread_t create_asteroids;
 	int blink_timer=0;
-	if(pthread_create(&collider_thread,NULL,collider,NULL)){
+	if(pthread_create(&collider_thread,NULL,collider,NULL))
+	{
 		printf("FATAL : Could not create collider thread : %s",strerror(errno));
 		exit(1);
 	}
 
 	if(pthread_create(&blast_handler,NULL,handle_blast,NULL))
-	{	printf("FATAL : Could not create blast handling thread : %s",strerror(errno));
+	{	
+		printf("FATAL : Could not create blast handling thread : %s",strerror(errno));
 		exit(1);
 	}
 	
 	if(pthread_create(&create_asteroids,NULL,generate_new_asteroids,NULL))
 	{	printf("FATAL : Could not create asteroid generating thread: %s",strerror(errno));
 		exit(1);
-}
+	}
 		
 	ALLEGRO_COLOR acolor=al_map_rgb(255,0,0);
 	bool left=false,right=false,up=false,down=false,space=false,shift=false,redraw=false,escape=false;
 	while(1){
-			al_wait_for_event(game->queue,&game->event);
+		al_wait_for_event(game->queue,&game->event);
 		if(game->event.type==ALLEGRO_EVENT_TIMER){
 
 			redraw=true; // makes sure that only the timer event triggers the display to advance
@@ -327,7 +334,7 @@ void menu(){
 	bool play_first=true,play_set=false;
 	bool exit_first=true,exit_set=false;
 	bool new_game_first=true,new_game_set=false;
-	bool is_exit_selected,is_play_selected,is_new_game_selected;
+	bool is_exit_selected=false,is_play_selected=false,is_new_game_selected=false;
 	bool redraw=true;
 	
 	ALLEGRO_TRANSFORM menu_exit;		
@@ -436,7 +443,6 @@ int main(){
 	game->timer = al_create_timer(1.0/30.0);
 	game->queue= al_create_event_queue();
 	font = al_create_builtin_font();
-	
 
 	al_register_event_source(game->queue,al_get_timer_event_source(game->timer));
 	al_register_event_source(game->queue,al_get_keyboard_event_source());

@@ -1,6 +1,7 @@
 #include "../include/includes_for_prototype2.h"
 game_t* game;
 extern ALLEGRO_TRANSFORM *trans;
+extern pthread_mutex_t ast_lock_collider;
 ALLEGRO_TRANSFORM local_trans;
 ALLEGRO_FONT* local_font; 
 //ALLEGRO_TRANSFORM death_trans; 
@@ -93,7 +94,7 @@ void generate_blast(float sp_pos_x,float sp_pos_y,float direction){
 }
 
 void handle_sp_collision(float *sp_x,float *sp_y,float *theta){
-        asteroid* ptr=game->as_null;
+	asteroid* ptr=game->as_null;
 	int itr=game->asteroids_on_screen;
         for(int i=0;i<itr;i++){
 
@@ -260,11 +261,14 @@ void clean_asteroids(bool free_all){
 
 void* generate_new_asteroids(void *null){
 	while(1){
+	void *retval;
+	if(game->state & GAME_PAUSED) pthread_exit(retval);
 	int itr=game->asteroids_on_screen;
 	if(itr <= 2){
 	srand(time(0));
 	asteroid* ptr;
         for(int i=0;i < 5; i++){
+		if(game->state & GAME_PAUSED) pthread_exit(retval);
                 ptr= (asteroid* )(malloc(sizeof(asteroid)));
                 int X=rand()%2;
                 int Y=rand()%2;
@@ -304,9 +308,10 @@ void* generate_new_asteroids(void *null){
                 ptr->color = al_map_rgb(0,0,255);
                 ptr->trans = (ALLEGRO_TRANSFORM*)(malloc(sizeof(ALLEGRO_TRANSFORM)));
                 al_identity_transform((ptr->trans));
-
 		ptr->next=game->as_null->next;
+		pthread_mutex_lock(&ast_lock_collider);
 		game->as_null->next=ptr;
+		pthread_mutex_unlock(&ast_lock_collider);
 		game->asteroids_on_screen++;
 
         }
@@ -363,7 +368,7 @@ void respawn_wait(){
 	al_flush_event_queue(game->queue);
 }
 
-void you_died(){
+/* void you_died(){
 	int wait_timer=0;
 	int time_remaining=3;
 	char string[22];
@@ -409,4 +414,4 @@ void you_died(){
 		
 	}
 	al_flush_event_queue(game->queue);
-}
+} */
