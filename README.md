@@ -10,7 +10,7 @@ Just an ammateur implementation of the legendary arcade game blasteroids
 commands for any unix based users(mac users as well), just copy paste all of them in the terminal separated by a ; or run each of them individually:
 
 sudo apt update --> update the system                                                                                           
-sudo apt install liballegro4.4 liballegro4-dev allegro4-doc --> install the dependencies
+sudo apt install liballegro5.2 liballegro5-dev allegro5-doc --> install the dependencies
 
 git clone https://github.com/JA3G3R/blasteroids                                                                                 
 cd blasteroids/
