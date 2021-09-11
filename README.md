@@ -17,7 +17,7 @@ cd blasteroids/
 
 BELOW IS THE MAIN COMPILATION COMMAND [which produces the actual blasteroids game binary]
 
-gcc -g blasteroids.c lib/* -lallegro -lallegro_font -lallegro_primitives -lm lpthread -o blasteroids
+gcc -g blasteroids.c lib/* -lallegro -lallegro_font -lallegro_primitives -lm -lpthread -o blasteroids
 
 -------------------
 <<<<<<< HEAD
